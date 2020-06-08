@@ -50,12 +50,12 @@
      * @param {Boolean} options.cacheBust - set to true to cache bust by appending the time to the request url
      * @return {Promise} - A promise that is fulfilled with a SVG image data URL
      * */
-    function toSvg(node, options) {
+    function toSvg(node, options, imageOptions) {
         options = options || {};
         copyOptions(options);
         return Promise.resolve(node)
             .then(function (node) {
-                return cloneNode(node, options.filter, true);
+                return cloneNode(node, options.filter, true, imageOptions);
             })
             .then(embedFonts)
             .then(inlineImages)
@@ -87,8 +87,8 @@
      * @param {Object} options - Rendering options, @see {@link toSvg}
      * @return {Promise} - A promise that is fulfilled with a Uint8Array containing RGBA pixel data.
      * */
-    function toPixelData(node, options) {
-        return draw(node, options || {})
+    function toPixelData(node, options, imageOptions) {
+        return draw(node, options || {}, imageOptions)
             .then(function (canvas) {
                 return canvas.getContext('2d').getImageData(
                     0,
@@ -104,8 +104,8 @@
      * @param {Object} options - Rendering options, @see {@link toSvg}
      * @return {Promise} - A promise that is fulfilled with a PNG image data URL
      * */
-    function toPng(node, options) {
-        return draw(node, options || {})
+    function toPng(node, options, imageOptions) {
+        return draw(node, options || {}, imageOptions)
             .then(function (canvas) {
                 return canvas.toDataURL();
             });
@@ -116,9 +116,9 @@
      * @param {Object} options - Rendering options, @see {@link toSvg}
      * @return {Promise} - A promise that is fulfilled with a JPEG image data URL
      * */
-    function toJpeg(node, options) {
+    function toJpeg(node, options, imageOptions) {
         options = options || {};
-        return draw(node, options)
+        return draw(node, options, imageOptions)
             .then(function (canvas) {
                 return canvas.toDataURL('image/jpeg', options.quality || 1.0);
             });
@@ -129,8 +129,8 @@
      * @param {Object} options - Rendering options, @see {@link toSvg}
      * @return {Promise} - A promise that is fulfilled with a PNG image blob
      * */
-    function toBlob(node, options) {
-        return draw(node, options || {})
+    function toBlob(node, options, imageOptions) {
+        return draw(node, options || {}, imageOptions)
             .then(util.canvasToBlob);
     }
 
@@ -149,9 +149,11 @@
         }
     }
 
-    function draw(domNode, options) {
+    function draw(domNode, options, imageOptions) {
         return toSvg(domNode, options)
-            .then(util.makeImage)
+            .then(function(uri) {
+                return util.makeImage(uri, imageOptions)
+            })
             .then(util.delay(100))
             .then(function (image) {
                 var canvas = newCanvas(domNode);
@@ -174,11 +176,13 @@
         }
     }
 
-    function cloneNode(node, filter, root) {
+    function cloneNode(node, filter, root, imageOptions) {
         if (!root && filter && !filter(node)) return Promise.resolve();
 
         return Promise.resolve(node)
-            .then(makeNodeCopy)
+            .then(function(node) {
+                return makeNodeCopy(node, imageOptions)
+            })
             .then(function (clone) {
                 return cloneChildren(node, clone, filter);
             })
@@ -205,7 +209,7 @@
                 children.forEach(function (child) {
                     done = done
                         .then(function () {
-                            return cloneNode(child, filter);
+                            return cloneNode(child, filter, false, imageOptions);
                         })
                         .then(function (childClone) {
                             if (childClone) parent.appendChild(childClone);
@@ -449,9 +453,14 @@
             };
         }
 
-        function makeImage(uri) {
+        function makeImage(uri, options) {
             return new Promise(function (resolve, reject) {
                 var image = new Image();
+                if (options) {
+                    for(var k in options) {
+                        image.setAttribute(k, options[k])
+                    }
+                }
                 image.onload = function () {
                     resolve(image);
                 };
